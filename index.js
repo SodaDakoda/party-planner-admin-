@@ -1,131 +1,149 @@
+/**
+ * @typedef Party
+ * @property {number} id
+ * @property {string} name
+ * @property {string} date
+ * @property {string} description
+ * @property {string} location
+ */
+
+/**
+ * @typedef Guest
+ * @property {number} id
+ * @property {string} name
+ */
+
+/**
+ * @typedef RSVP
+ * @property {number} id
+ * @property {number} eventId
+ * @property {number} guestId
+ */
+
 // === Constants ===
 const BASE = "https://fsa-crud-2aa9294fe819.herokuapp.com/api";
-const COHORT = ""; // Make sure to change this!
-const API = BASE + COHORT;
+const COHORT = "2509-pt-mac";
+const RESOURCE = "/events";
+const API = `${BASE}/${COHORT}${RESOURCE}`;
+const GUESTS_API = `${BASE}/${COHORT}/guests`;
+const RSVPS_API = `${BASE}/${COHORT}/rsvps`;
 
 // === State ===
 let parties = [];
 let selectedParty;
-let rsvps = [];
 let guests = [];
+let rsvps = [];
 
-/** Updates state with all parties from the API */
+// === Fetch Functions ===
 async function getParties() {
   try {
-    const response = await fetch(API + "/events");
-    const result = await response.json();
-    parties = result.data;
-    render();
-  } catch (e) {
-    console.error(e);
+    const response = await fetch(API);
+    const data = await response.json();
+    parties = data.data;
+  } catch (err) {
+    console.error("Error fetching parties:", err);
   }
 }
 
-/** Updates state with a single party from the API */
 async function getParty(id) {
   try {
-    const response = await fetch(API + "/events/" + id);
-    const result = await response.json();
-    selectedParty = result.data;
+    const response = await fetch(`${API}/${id}`);
+    const data = await response.json();
+    selectedParty = data.data;
     render();
-  } catch (e) {
-    console.error(e);
+  } catch (err) {
+    console.error("Error fetching party:", err);
   }
 }
 
-/** Updates state with all RSVPs from the API */
-async function getRsvps() {
+async function getGuestsAndRsvps() {
   try {
-    const response = await fetch(API + "/rsvps");
-    const result = await response.json();
-    rsvps = result.data;
-    render();
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-/** Updates state with all guests from the API */
-async function getGuests() {
-  try {
-    const response = await fetch(API + "/guests");
-    const result = await response.json();
-    guests = result.data;
-    render();
-  } catch (e) {
-    console.error(e);
+    const [guestsRes, rsvpsRes] = await Promise.all([
+      fetch(GUESTS_API),
+      fetch(RSVPS_API),
+    ]);
+    guests = (await guestsRes.json()).data;
+    rsvps = (await rsvpsRes.json()).data;
+  } catch (err) {
+    console.error("Error fetching guests or RSVPs:", err);
   }
 }
 
 // === Components ===
-
-/** Party name that shows more details about the party when clicked */
 function PartyListItem(party) {
   const $li = document.createElement("li");
+  const $a = document.createElement("a");
+  $a.href = "#selected";
+  $a.textContent = party.name;
 
-  if (party.id === selectedParty?.id) {
-    $li.classList.add("selected");
+  if (selectedParty && selectedParty.id === party.id) {
+    $a.classList.add("selected"); // Highlight selected party
   }
 
-  $li.innerHTML = `
-    <a href="#selected">${party.name}</a>
-  `;
-  $li.addEventListener("click", () => getParty(party.id));
+  $a.addEventListener("click", () => getParty(party.id));
+  $li.appendChild($a);
   return $li;
 }
 
-/** A list of names of all parties */
 function PartyList() {
   const $ul = document.createElement("ul");
-  $ul.classList.add("parties");
+  $ul.classList.add("lineup");
 
-  const $parties = parties.map(PartyListItem);
-  $ul.replaceChildren(...$parties);
+  parties.forEach((party) => {
+    $ul.append(PartyListItem(party));
+  });
 
   return $ul;
 }
 
-/** Detailed information about the selected party */
-function SelectedParty() {
+function PartyDetails() {
   if (!selectedParty) {
     const $p = document.createElement("p");
-    $p.textContent = "Please select a party to learn more.";
+    $p.textContent = "Please select a party to learn details.";
     return $p;
   }
 
-  const $party = document.createElement("section");
-  $party.innerHTML = `
-    <h3>${selectedParty.name} #${selectedParty.id}</h3>
-    <time datetime="${selectedParty.date}">
-      ${selectedParty.date.slice(0, 10)}
-    </time>
-    <address>${selectedParty.location}</address>
-    <p>${selectedParty.description}</p>
-    <GuestList></GuestList>
-  `;
-  $party.querySelector("GuestList").replaceWith(GuestList());
+  const $div = document.createElement("div");
+  $div.classList.add("party-details");
 
-  return $party;
-}
-
-/** List of guests attending the selected party */
-function GuestList() {
-  const $ul = document.createElement("ul");
-  const guestsAtParty = guests.filter((guest) =>
-    rsvps.find(
-      (rsvp) => rsvp.guestId === guest.id && rsvp.eventId === selectedParty.id
-    )
+  // Format the date nicely
+  const formattedDate = new Date(selectedParty.date).toLocaleDateString(
+    undefined,
+    {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }
   );
 
-  // Simple components can also be created anonymously:
-  const $guests = guestsAtParty.map((guest) => {
-    const $guest = document.createElement("li");
-    $guest.textContent = guest.name;
-    return $guest;
-  });
-  $ul.replaceChildren(...$guests);
+  // Get guests who RSVP'd
+  const partyRsvps = rsvps.filter((r) => r.eventId === selectedParty.id);
+  const partyGuests = partyRsvps.map((r) =>
+    guests.find((g) => g.id === r.guestId)
+  );
 
-  return $ul;
+  // Create guest list HTML
+  let guestHTML = "<p><strong>Guests RSVP'd:</strong></p>";
+  if (partyGuests.length > 0) {
+    guestHTML += "<ul>";
+    partyGuests.forEach((g) => {
+      guestHTML += `<li>${g.name}</li>`;
+    });
+    guestHTML += "</ul>";
+  } else {
+    guestHTML += "<p>No guests have RSVP'd yet.</p>";
+  }
+
+  $div.innerHTML = `
+    <h3>${selectedParty.name} (ID: ${selectedParty.id})</h3>
+    <p><strong>Date:</strong> ${formattedDate}</p>
+    <p><strong>Location:</strong> ${selectedParty.location}</p>
+    <p>${selectedParty.description}</p>
+    ${guestHTML}
+  `;
+
+  return $div;
 }
 
 // === Render ===
@@ -140,19 +158,18 @@ function render() {
       </section>
       <section id="selected">
         <h2>Party Details</h2>
-        <SelectedParty></SelectedParty>
+        <PartyDetails></PartyDetails>
       </section>
     </main>
   `;
 
   $app.querySelector("PartyList").replaceWith(PartyList());
-  $app.querySelector("SelectedParty").replaceWith(SelectedParty());
+  $app.querySelector("PartyDetails").replaceWith(PartyDetails());
 }
 
 async function init() {
+  await getGuestsAndRsvps();
   await getParties();
-  await getRsvps();
-  await getGuests();
   render();
 }
 
